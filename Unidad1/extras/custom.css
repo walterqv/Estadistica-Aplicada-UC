@@ -1,0 +1,35 @@
+
+#sidebar {
+  background: #fcf6ff ;
+  background-image: url("contidist.png");
+  background-repeat: no-repeat;
+  background-position: 50% 80%;
+  background-size: 300px 200px;
+  margin-bottom: 3em;
+}
+
+#postamble {
+  background:#ee90f9f8;
+  border-top:solid 10px #8929f8;
+  background-repeat: no-repeat;
+  background-position: right;
+  background-size: 40px 50px;
+}
+
+.title {
+  text-align: center;
+  color: #680da1;
+}
+
+.subtitle {
+  text-align: center;
+  color: #7741f5;
+}
+
+h1, h3, h4, h5, h6, legend {
+  color: #8a2bef;
+}
+
+#content h2 {
+    background-color: #a30ac9;
+}
