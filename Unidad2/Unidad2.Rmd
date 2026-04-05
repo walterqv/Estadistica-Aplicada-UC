@@ -1,0 +1,331 @@
+---
+title: "ESTADÍSTICA APLICADA"
+subtitle: "UNIDAD 2"
+author: Dr. Walter Quispe Vargas
+date:  "`r format(Sys.time(), '%d - %m - %Y')`"
+output:
+  rmdformats::readthedown:
+    highlight: kate
+    code_folding: show
+css: extras/custom.css
+--- 
+<style>
+body {
+text-align: justify}
+</style>
+  
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(cache = TRUE, echo = TRUE, warning = FALSE, message = FALSE, comment = NA)
+library(knitr)
+library(tidyverse)
+library(janitor)
+library(glue)
+library(kableExtra)
+library(skimr)
+library(descriptr)
+library(corrplot)
+library(BSDA)
+library(EnvStats)
+library(moderndive)
+library(gapminder)
+library(broom)
+library(DT)       
+library(plotly)  
+library(palmerpenguins)
+library(gt)
+library(gtsummary)
+```
+
+
+**Curso de Estadística Aplicada para la EAP de Ciencia de la Computación de la Univeridad Continental**
+
+---
+
+# 📊 Regresión y Correlación
+
+- La regresión es uno de los conceptos más útiles en estadística porque implica la predicción numérica. La regresión predice algo que no sabemos, donde la respuesta es un número. A menudo recopilamos datos sobre cosas que son fáciles de medir y las llamamos variables independientes o explicativas. La regresión se utiliza para decirnos sobre las cosas que a menudo son difíciles de medir, denominadas variable dependiente o de respuesta.
+
+- Mientras que la regresión nos permite hacer predicciones, la correlación mide el grado de asociación entre dos variables. Los coeficientes de correlación oscilan entre -1 y 1, con correlaciones negativas menores que 0 y correlaciones positivas mayores que 0. Los coeficientes que son "extremos", es decir, están más cerca de -1 o 1, se consideran fuertemente correlacionados. Un coeficiente de correlación cerca de 0 indica que no hay correlación entre dos variables.
+
+
+#### Ejemplo: Calidad del Aire
+
+- Calidad del aire en R que proporciona mediciones diarias de ozono recopiladas en la ciudad de Nueva York de mayo a septiembre de 1973
+
+- Dos variables de interés son (1) Ozone, el ozono medio en partes por mil millones de 1300 a 1500 horas medidos en Roosevelt Island y (2) Temp, la temperatura diaria máxima en grados Fahrenheit en el aeropuerto LaGuardia:
+
+```{r}
+air <- tibble(airquality)
+ggplot(air, aes(x = Temp, y = Ozone)) +
+  geom_point(color = "magenta") +
+  labs(y = "Ozone (ppb)", x = "Temperature (deg F)")
+```
+
+```{r}
+lm.ozone <- lm(Ozone ~ Temp, data = air)
+summary(lm.ozone)
+```
+```{r}
+# Get regression table:
+get_regression_table(lm.ozone)
+```
+
+
+
+```{r}
+ggplot(air, aes(x = Temp, y = Ozone)) +
+  geom_point(color='magenta') +
+  labs(y = "Ozone (ppb)", x = "Temperature (deg F)") +
+  geom_abline(intercept = -146.9955, slope = 2.4287, col = "red") 
+```
+
+#### Ejemplo: Correlación Iris Dataset
+
+```{r}
+cor.test(iris$Sepal.Length, iris$Sepal.Width)
+```
+
+
+
+---
+
+# 🔍 Tablas Interactivas {.tabset}
+
+## Modelo: `mpg ~ wt`
+
+```{r reg-model}
+model <- lm(mpg ~ wt, data = mtcars)
+tidy_model <- broom::tidy(model)
+glance_model <- broom::glance(model)
+
+# Tabla de coeficientes (interactiva)
+datatable(tidy_model, options = list(dom = 't')) %>%
+  formatRound(columns = 2:5, digits = 3)
+
+# Resumen del modelo (R² y p-valor global)
+glance_model
+```
+
+## Gráfico de Regresión + Intervalos
+
+```{r reg-plot}
+ggplot(mtcars, aes(x = wt, y = mpg)) +
+  geom_point(color = "steelblue") +
+  geom_smooth(method = "lm", color = "firebrick", se = TRUE) +
+  labs(title = "Regresión Lineal: mpg ~ wt",
+       subtitle = paste("R² =", round(glance_model$r.squared, 2)),
+       x = "Peso (1000 lbs)", y = "MPG") +
+  theme_minimal()
+```
+
+**Interpretación:**  
+- **R² = `r round(glance_model$r.squared, 2)`**: El peso explica el `r round(glance_model$r.squared * 100, 1)`% de la variabilidad en MPG.  
+- **Ecuación:** *MPG = `r round(coef(model)[1], 2)` `r round(coef(model)[2], 2)`·wt*  
+
+---
+
+
+
+# 💡 Palmer Penguins
+
+<center>
+  <img src="https://raw.githubusercontent.com/allisonhorst/palmerpenguins/master/man/figures/lter_penguins.png" width="300" />
+  <p><em>Figura 1: Pingüinos del archipiélago Palmer (Antártida)</em></p>
+</center>
+
+
+Este estudio analiza las relaciones morfométricas en tres especies de pingüinos antárticos utilizando técnicas estadísticas inferenciales vistas en clase. La base de datos sera la de  `palmerpenguins` que contiene mediciones de 344 pinguinos:
+
+
+```{r}
+penguins %>%
+  tabyl(species) %>%
+  adorn_totals("row") %>%
+  adorn_pct_formatting()
+```
+
+La tabla muestra el porcentaje de cada especie en la base de datos. Adelie es la especie más representada con 152 pinguinos , seguida por Gentoo y Chinstrap.
+
+
+### Limpieza de datos
+
+```{r}
+penguins_clean <- penguins %>%
+  drop_na() %>%
+  clean_names()
+
+cat("Datos originales:", nrow(penguins), "filas\n")
+cat("Datos limpios:", nrow(penguins_clean), "filas\n")
+```
+
+### Distribución de especies
+
+```{r}
+penguins_clean %>%
+  tabyl(species) %>%
+  adorn_totals("row") %>%
+  adorn_pct_formatting(digits = 1) %>%
+  kable(caption = "Distribución de especies en la muestra") %>%
+  kable_styling(
+    bootstrap_options = c("striped", "hover"),
+    full_width = FALSE
+  )
+```
+La tabla muestra el porcentaje de cada especie despues de la limpieza de los datos . Adelie (43.8%) sigue siendo la especie más representada con 146 pinguinos , seguida por Gentoo(35.7%) y Chinstrap(20.4%).
+
+### Análisis descriptivo
+
+```{r}
+penguins_clean %>%
+  select(body_mass_g, flipper_length_mm, bill_length_mm) %>%
+  psych::describe() %>%
+  select(-vars, -trimmed, -mad, -range) %>%
+  kable(digits = 2, caption = "Estadísticos descriptivos") %>%
+  kable_styling()
+```
+
+### Masa corporal por especie
+
+```{r}
+ggplot(penguins_clean, aes(x = body_mass_g, fill = species)) +
+  geom_density(alpha = 0.7) +
+  scale_fill_brewer(palette = "Blues") +
+  labs(
+    title = "Distribución de la masa corporal por especie",
+    x = "Masa corporal (g)",
+    y = "Densidad",
+    fill = "Especie"
+  ) +
+  theme_minimal() +
+  theme(legend.position = "bottom")
+```
+Los pingüinos Gentoo presentan las mayores masas corporales, seguidos por los Chinstrap, mientras que los Adelie son los más livianos
+
+### Relación longitud-masa
+
+```{r}
+ggplot(penguins_clean, aes(x = flipper_length_mm, y = body_mass_g)) +
+  geom_point(aes(color = species, shape = sex), size = 3, alpha = 0.8) +
+  geom_smooth(method = "lm", se = FALSE, color = "darkred") +
+  scale_color_brewer(palette = "Dark2") +
+  labs(
+    title = "Relación entre longitud de aleta y masa corporal",
+    x = "Longitud de aleta (mm)",
+    y = "Masa corporal (g)",
+    color = "Especie",
+    shape = "Sexo"
+  ) +
+  facet_wrap(~species) +
+  theme_bw()
+```
+Existe una relación positiva clara entre la longitud de aleta y la masa corporal en las tres especies de pingüinos. A mayor longitud de aleta, mayor peso corporal. Además, se observa que los machos (triángulos) tienden a ser más grandes que las hembras (círculos), tanto en masa como en longitud de aleta, dentro de cada especie.
+
+
+### Normalidad de los datos
+
+```{r}
+normality_tests <- penguins_clean %>%
+  group_by(species) %>%
+  summarise(
+    variable = "body_mass_g",
+    shapiro_stat = shapiro.test(body_mass_g)$statistic,
+    shapiro_p = shapiro.test(body_mass_g)$p.value
+  ) %>%
+  mutate(
+    shapiro_p = ifelse(shapiro_p < 0.001, "< 0.001", round(shapiro_p, 3))
+  )
+
+normality_tests %>%
+  kable(caption = "Pruebas de normalidad (Shapiro-Wilk)") %>%
+  kable_styling()
+```
+Según la prueba de normalidad de Shapiro-Wilk, los datos de masa corporal presentan distribución aproximadamente normal para las especies Chinstrap (p = 0.561) y Gentoo (p = 0.261), ya que sus valores p son mayores a 0.05. Sin embargo, para la especie Adelie, el valor p = 0.042 indica una ligera desviación de la normalidad, por lo que se debe tener precaución al aplicar pruebas paramétricas con esta especie.
+
+### Diferencia de masa corporal entre sexos
+
+Se realizó una prueba T para comparar la masa corporal promedio entre pingüinos machos y hembras. El resultado fue:
+
+```{r}
+t_test_results <- t.test(body_mass_g ~ sex, data = penguins_clean)
+
+tibble(
+  "Estadístico t" = t_test_results$statistic,
+  "Grados de libertad" = t_test_results$parameter,
+  "Valor p" = ifelse(t_test_results$p.value < 0.001, 
+                    "< 0.001", 
+                    round(t_test_results$p.value, 4)),
+  "Diferencia de medias" = diff(t_test_results$estimate),
+  "IC 95%" = paste(round(t_test_results$conf.int, 2), collapse = " a ")
+) %>%
+  kable(caption = "Prueba t para diferencia de medias") %>%
+  kable_styling()
+```
+Diferencia de medias = 683.41 gramos, lo que sugiere que los machos tienen en promedio mayor masa corporal que las hembras.
+
+El intervalo de confianza del 95% (-840.58 a -526.25) no incluye el cero, lo cual refuerza la evidencia de que existe una diferencia real entre las medias poblacionales.
+
+```{r}
+ggplot(penguins_clean, aes(x = sex, y = body_mass_g, fill = sex)) +
+  geom_violin(trim = FALSE, alpha = 0.7) +
+  geom_boxplot(width = 0.1, fill = "white") +
+  scale_fill_manual(values = c("female" = "#D08770", "male" = "#A3BE8C")) +
+  labs(title = "Diferencia de masa corporal entre sexos",
+       x = "Sexo",
+       y = "Masa corporal (g)") +
+  theme_minimal()
+```
+
+Este gráfico muestra diferencias claras en la distribución del peso entre machos y hembras. La prueba T respalda esta diferencia con un valor de peso significativo.
+
+### Análisis de regresión
+
+```{r}
+full_model <- lm(body_mass_g ~ flipper_length_mm + species + sex, 
+               data = penguins_clean)
+
+tbl_regression(full_model) %>%
+  as_gt() %>%
+  tab_header(
+    title = "Modelo de regresión múltiple",
+    subtitle = "Predictores del peso corporal en pingüinos"
+  ) %>%
+  tab_options(table.width = "80%")
+```
+El modelo de regresion linea multiple muestra que el peso corporal en pingüinos está significativamente influenciado por el largo de las aletas, la especie (especialmente Gentoo) y el sexo.
+
+### Diagnóstico del modelo
+
+```{r}
+par(mfrow = c(2, 2))
+plot(full_model)
+par(mfrow = c(1, 1))
+```
+
+**Residuals vs Fitted:**
+Los residuos están distribuidos de forma aleatoria alrededor de cero, lo cual sugiere que se cumple la suposición de linealidad y homocedasticidad (varianza constante). No se observan patrones claros.
+
+**Q-Q Plot (Normalidad de los residuos):**
+Los puntos siguen aproximadamente la línea diagonal, indicando que los residuos se distribuyen normalmente, aunque con ligeras desviaciones en los extremos.
+
+**Scale-Location (Varianza constante):**
+La dispersión de los residuos estandarizados parece ser relativamente constante, lo que apoya la suposición de homocedasticidad.
+
+**Residuals vs Leverage (Puntos influyentes):**
+Algunos puntos tienen alta leverage e influencia (por ejemplo, 835, 1640), pero no hay evidencia de que estén afectando gravemente el modelo. No hay observaciones que superen claramente la distancia de Cook.
+
+
+### Validación del modelo
+
+```{r}
+model_performance <- tibble(
+  "R-cuadrado" = summary(full_model)$r.squared,
+  "R-cuadrado ajustado" = summary(full_model)$adj.r.squared,
+  "Error estándar" = sigma(full_model),
+  "AIC" = AIC(full_model)
+)
+
+model_performance %>%
+  kable(caption = "Métricas de desempeño del modelo") %>%
+  kable_styling()
+```
+Las métricas obtenidas muestran que el modelo de regresión lineal es estadísticamente sólido y confiable. El error estándar (295.56 gramos) es razonable dentro del rango de datos 
