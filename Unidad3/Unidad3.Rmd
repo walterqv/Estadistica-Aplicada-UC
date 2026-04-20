@@ -1,0 +1,314 @@
+---
+title: "ESTADÍSTICA APLICADA"
+subtitle: "UNIDAD 3"
+author: Dr. Walter Quispe Vargas
+date:  "`r format(Sys.time(), '%d - %m - %Y')`"
+output:
+  rmdformats::readthedown:
+    highlight: kate
+    code_folding: show
+css: extras/custom.css
+--- 
+<style>
+body {
+text-align: justify}
+</style>
+  
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(cache = TRUE, echo = TRUE, warning = FALSE, message = FALSE, comment = NA)
+library(knitr)
+library(tidyverse)
+library(janitor)
+library(glue)
+library(kableExtra)
+library(skimr)
+library(descriptr)
+library(corrplot)
+library(BSDA)
+library(EnvStats)
+library(moderndive)
+library(gapminder)
+library(broom)
+library(DT)       
+library(plotly)  
+library(palmerpenguins)
+library(gt)
+library(gtsummary)
+library(ggcorrplot)
+library(tidyquant)
+library(timetk)
+library(forecast)
+```
+
+
+
+**Curso de Estadística Aplicada para la EAP de Ciencia de la Computación de la Univeridad Continental**
+
+---
+
+# 📈 Series de Tiempo
+
+- Una serie de tiempo es una secuencia de datos, observaciones o mediciones registradas en orden cronológico, generalmente a intervalos regulares (diarios, mensuales, anuales). Se denota mediante $$\{X_t\}_{t=0,1,2,...}$$
+
+- El análisis de series temporales es fundamental para detectar patrones a lo largo del tiempo, como las tendencias, estacionalidades o ciclos. Esta técnica nos permite realizar proyecciones de la variable de interes, basadas en comportamiento histórico. Se aplica la descomposición de la serie, modelos de autorregresivos integrados de medias móviles (ARIMA) y técnicas de suavizado para estimar y visualizar las tendencias.
+
+\vspace{0.8cm}
+- Descomposción de una Serie de Tiempo:
+
+    - Modelo Aditivo: $$X_t = T_t+S_t+e_t$$
+    
+    Cuándo usarlo: Use el modelo aditivo cuando los patrones estacionales no crezcan o se encojan con el tiempo. 
+    
+    - Modelo Multiplicativo: $$X_t = T_t \times S_t \times e_t$$
+    
+    Elija el modelo multiplicativo cuando el efecto estacional crezca o se reduzca en conjunto con la tendencia. 
+    
+Donde $T_t$ es la Tendencia, $S_t$ es la estacionalidad y $e_t$ es el componente aleatorio (ruido).
+
+### Visualizaciones
+
+- Uso de la libreria `tidyquant`, datos financientos en las compañias tecnológicas de USA. 
+
+- Uso de `ggplot2`
+
+```{r}
+FANG_daily <- FANG %>%
+    group_by(symbol)
+
+FANG_daily %>%
+    ggplot(aes(x = date, y = adjusted, color = symbol)) +
+    geom_line(size = 1) +
+    labs(title = "Precio Diario de las Acciones",
+         x = "", y = "Precio Ajustado", color = "") +
+    facet_wrap(~ symbol, ncol = 2, scales = "free_y") +
+    scale_y_continuous(labels = scales::dollar) +
+    theme_tq() + 
+    scale_color_tq()
+```
+
+- Uso de `plot_time_series`, los graficos incluyen un **Suavizado** (método `LOWESS`) que sirve para describir la **TENDENCIA**
+
+```{r}
+
+FANG %>% 
+  group_by(symbol) %>% 
+  plot_time_series(date, adjusted, .facet_ncol = 2, .interactive = FALSE) + ggtitle("Precio de Cierre Ajustado")
+```
+
+
+- Las series de tiempo presentan un **crecimiento** a travez del tiempo, esto es **TENDENCIA CRECIENTE**.
+
+
+```{r}
+FANG %>% 
+  group_by(symbol) %>% 
+  plot_time_series(date,volume, .facet_ncol =2, .interactive = FALSE) + ggtitle("Volumen de Negocios")
+```
+
+- Las series de tiempo presentan estabilidad (no crecen ni decrecen), esto se denomina **ESTACIONARIEDAD**, pero presentan mucha **VARIABILIDAD** (los picos abrutos a lo largo del tiempo).
+
+- Uso de la libreria `UKgrid`, datos de consumo de electricidad en **UK**
+
+```{r}
+library(UKgrid)
+uk_data <- 
+  UKgrid %>% 
+  clean_names() %>% 
+  select(timestamp, nd)
+
+uk_monthly_data <- 
+  uk_data %>% 
+  summarize_by_time(.date_var = timestamp,
+                    .by = "month",
+                    nd = sum(nd, na.rm = TRUE))
+
+ggplot(data = uk_monthly_data, aes(x = timestamp, y = nd)) +
+  geom_line() +
+  geom_smooth(se = FALSE) +
+  labs(x = "", y = "Demanda de Electricidad") +
+  scale_x_datetime(date_breaks = "year", date_labels = "%b-%Y")+
+  theme(axis.text.x = element_text(angle = 45, vjust = 0.5, hjust = 1))
+```
+
+- La serie de tiempo componente **ESTACIONAL** y de **TENDENCIA**.
+
+```{r}
+plot_time_series(uk_monthly_data, 
+                 .date_var = timestamp,
+                 .smooth = TRUE,
+                 .value = nd,
+                 .interactive = TRUE,
+                 .x_lab = "",
+                 .y_lab = "Demanda de Electricidad")
+```
+
+- Gráfico interactivo, visualizado unicamente en `html`.
+
+### Descomposición
+
+- Recuerda que toda serie de tiempo $X_t$ tiene componentes: tendencia $T_t$, Estacional $S_t$ y residuo $e_t$ (remainder)
+
+```{r}
+data("AirPassengers")
+decomposed <- stl(AirPassengers, s.window = "periodic")
+plot(decomposed)
+```
+
+
+```{r}
+decomposed_add <- decompose(AirPassengers, type = "additive")
+plot(decomposed_add)
+```
+
+```{r}
+decomposed_mult <- decompose(AirPassengers, type = "multiplicative")
+plot(decomposed_mult)
+```
+
+### Modelo ARIMA(p,d,q)
+
+- Los modelos autorregresivos integrados de medias móviles (ARIMA) se especifican mediante tres parámetros $(p, d, q)$. El proceso de modelamiento de un modelo ARIMA se conoce como el método **Box-Jenkins**.
+
+1. **Identificación del Modelo**: El primer paso es lograr que la serie sea estacionaria, a menudo mediante diferenciación $d$. Se analizan gráficos de autocorrelación (ACF) y autocorrelación parcial (PACF) para determinar los órdenes $q$ (media móvil) y $p$ (autorregresivo) respectivamente del modelo $ARIMA(p,d,q)$.
+
+2. **Estimación de Parámetros**: Se calculan los coeficientes para los componentes $AR$ y $MA$ identificados, a menudo buscando minimizar criterios como el de Akaike (AIC) o Schwarz.
+    
+3. **Verificación Diagnóstica** (Chequeo): Se examinan los residuos del modelo para confirmar que no tengan estructura (ruido blanco). Si no es así, el modelo se ajusta y se repite el proceso desde el paso 1.
+
+4. **Pronóstico**: Una vez que el modelo es adecuado, se utiliza para proyectar valores futuros, generalmente eficiente para el corto plazo. 
+    
+- El modelo autoregresivo $AR(p)$ se refiere al uso de valores pasados en la ecuación de regresión para la serie $X_t$. El parámetro autoregresivo $p$ especifica el número de pasos atras utilizados en el modelo. Por ejemplo, $AR(2)$ o, de manera equivalente, $ARIMA(2,0,0)$, se representa como:
+
+$$X_t=\mu+\phi_1X_{t-1}+\phi_2X_{t-2}+e_t$$
+- El modelo de media móvil $MA(q)$ representa el error del modelo como una combinación lineal de términos de error anteriores $e_t$. El orden $q$ determina el número de términos a incluir en el modelo
+
+$$X_t = \mu + \theta_1e_{t-1}+\theta_2e_{t-2}+...+\theta_q e_{t-q} $$
+
+- La $d$ representa el grado de diferenciación de la serie $X_t$. Diferenciar una serie implica simplemente restar sus valores actuales y anteriores $d$ veces, por ejemplo si $d=1$, ($X_t-X_{t-1}$). A menudo, la diferenciación se utiliza para estabilizar la serie cuando no se cumpla la suposición de **ESTACIONARIEDAD**,
+
+- Los modelos ARIMA también se pueden especificar a través de una estructura `ESTACIONAL` mediante los parametros $(P,D,Q)_M$, donde $M$ representa el periodo estacional.
+
+- Limitaciones, como se basan directamente en valores pasados de $X_t$, por lo tanto, funcionan mejor en series largas y estables.
+
+- Ejemplo: datos de AirPassengers, usando `auto.arima`
+
+```{r}
+AP <- log(AirPassengers) # Usar transformacion log
+model <- auto.arima(AP)
+model
+```
+
+- Funcion de autocorrelacion de los residuales
+
+```{r}
+acf(model$residuals, main = 'Correlogram')
+```
+
+- Funcion de autocorrelacion parcial
+
+```{r}
+pacf(model$residuals, main = 'Partial Correlogram' )
+```
+
+- Prueba de Ljung-Box para probar que los residuales son ruido blanco (normales con varianza constate.)
+
+```{r}
+Box.test(model$residuals, lag=20, type = 'Ljung-Box')
+```
+
+-  Histograma de los residuales para visualizar normalidad
+
+```{r}
+hist(model$residuals,
+     col = 'magenta',
+     xlab = 'Error',
+     main = 'Histograma de los Residuales',
+     freq = FALSE)
+lines(density(model$residuals))
+```
+
+- Predicciones 48 pasos adelante.
+
+```{r}
+f <- forecast(model, 48)
+autoplot(f)
+```
+
+### Produccion de Cobre-Cusco
+
+- La producción de cobre mensual en Cusco desde enero del 2003 hasta enero del 2026, medido en toneladas métricas finas (tm.f)
+
+- Datos obtenidos de: 
+[https://estadisticas.bcrp.gob.pe/estadisticas/series/mensuales/resultados/RD12957DM/html](https://estadisticas.bcrp.gob.pe/estadisticas/series/mensuales/resultados/RD12957DM/html)
+
+```{r}
+df <- read.csv("datasets/cobre-cusco.csv")
+cobre_ts <- ts(df$Cobre, start = c(2003, 1), frequency = 12)
+plot(cobre_ts)
+```
+
+
+```{r}
+data("cobre_ts")
+decomposed <- stl(cobre_ts, s.window = "periodic")
+plot(decomposed)
+```
+
+
+```{r}
+cobre_ts <- log(cobre_ts)
+model1 <- auto.arima(cobre_ts)
+model1
+```
+
+- Funcion de autocorrelacion de los residuales
+
+```{r}
+acf(model1$residuals, main = 'Correlogram')
+```
+
+- Funcion de autocorrelacion parcial
+
+```{r}
+pacf(model1$residuals, main = 'Partial Correlogram' )
+```
+
+- Prueba de Ljung-Box para probar que los residuales son ruido blanco (normales con varianza constate.)
+
+```{r}
+Box.test(model1$residuals, lag=20, type = 'Ljung-Box')
+```
+
+-  Histograma de los residuales para visualizar normalidad
+
+```{r}
+hist(model1$residuals,
+     col = 'magenta',
+     xlab = 'Error',
+     main = 'Histograma de los Residuales',
+     freq = FALSE)
+lines(density(model1$residuals))
+```
+
+- Predicciones 48 pasos adelante.
+
+```{r}
+f <- forecast(model1, 24)
+autoplot(f)
+```
+
+
+
+
+# 🤖 Clasificación
+
+
+
+# 🇵🇪 Datos Perú
+
+- [https://estadisticas.bcrp.gob.pe/estadisticas/series/](https://estadisticas.bcrp.gob.pe/estadisticas/series/)
+
+- [https://www.inei.gob.pe/estadisticas-indice-tematico/](https://www.inei.gob.pe/estadisticas-indice-tematico/)
+
+- [https://systems.inei.gob.pe/SIRTOD/](https://systems.inei.gob.pe/SIRTOD/)
+
