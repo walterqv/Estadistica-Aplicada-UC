@@ -38,6 +38,7 @@ library(ggcorrplot)
 library(tidyquant)
 library(timetk)
 library(forecast)
+library(titanic)
 ```
 
 
@@ -302,6 +303,365 @@ autoplot(f)
 
 # 🤖 Clasificación
 
+- Clasificación es una tarea fundamental de `Estadística` y `Machine Learning` que implica **categorizar** los elementos en grupos o clases predefinidos en función de ciertas características.
+
+- En la actualidad se clasifican datos de forma **supervisada** donde se provee la variebla respuesta ($Y$: variable respuesta, clase). Por otro lado, la clasificación no supervisada mejor conocida como agrupamiento `Clustering` no se conoce las clases ($Y$)
+
+### Regresion Logística.
+
+- Es un método estadístico utilizado para predecir la probabilidad de un resultado binario ($Y=0,1$) en función de las predictoras ($X_1,X_2,...,X_n$).
+
+- Es un modelo lineal generalizado, lo que significa que utiliza una función lineal para modelar los *log-Odds* (logaritmo de las chances).
+
+$$\log(\frac{p}{1-p})=\beta_0+\beta_1 X_1+\beta_2 X_2+...+\beta_n X_n$$
+o equivalentemente
+
+$$p=\frac{e^{\beta_0+\beta_1 X_1+\beta_2 X_2+...+\beta_n X_n}}{1+e^{\beta_0+\beta_1 X_1+\beta_2 X_2+...+\beta_n X_n}}$$
+Donde $p$ es la probabilidad de que ocurra el evento $Y=1$
+
+- Para fines de `clasificación`, la forma más sencilla de distinguir entre las dos clases es considerar que cuando $p>0.5$ la instancia pertenece a la clase de interés $Y=1$.
+
+
+### Titanic Dataset
+
+![](extras/titanic.png){width=90%}
+
+[https://www.kaggle.com/datasets/yasserh/titanic-dataset](https://www.kaggle.com/datasets/yasserh/titanic-dataset)
+
+
+- Desarrollar un modelo predictivo que responda a la pregunta: "¿qué tipo de personas tenían más probabilidades de sobrevivir?" utilizando datos de pasajeros (es decir, nombre, edad, sexo, clase socioeconómica, etc.)
+
+```{r}
+glimpse(titanic_train)
+```
+
+### Modelo Básico
+
+```{r}
+# Simple cleaning: remove rows with missing Age or Fare
+titanic_clean <- na.omit(titanic_train[, c("Survived", "Pclass", "Sex", "Age", "SibSp", "Parch", "Fare")])
+
+# Ensure categorical variables are factors
+titanic_clean$Survived <- as.factor(titanic_clean$Survived)
+titanic_clean$Sex <- as.factor(titanic_clean$Sex)
+titanic_clean$Pclass <- as.factor(titanic_clean$Pclass)
+```
+
+```{r}
+# Fit the generalized linear model
+model <- glm(Survived ~ Pclass + Sex + Age + SibSp, 
+             data = titanic_clean, 
+             family = binomial(link = "logit"))
+
+# View model coefficients and significance
+summary(model)
+```
+
+
+```{r}
+# Predict probabilities for the training set
+probabilities <- predict(model, type = "response")
+
+# Convert probabilities to binary outcomes
+predictions <- ifelse(probabilities > 0.5, 1, 0)
+
+# Create a confusion matrix to check accuracy
+table(Predicted = predictions, Actual = titanic_clean$Survived)
+```
+
+```{r}
+# Calculate basic accuracy
+accuracy <- mean(predictions == titanic_clean$Survived)
+print(paste("Model Accuracy:", round(accuracy, 4)))
+```
+
+
+
+### Tidy Modeling
+
+-  [https://www.tidymodels.org](https://www.tidymodels.org)
+
+-  bootstrapping es un método de remuestreo, utilizado para estimar la incertidumbre de un rendimiento estadístico. 
+
+- Implica tomar muestras repetidas del mismo tamaño que el conjunto de datos original, pero con reemplazo.
+
+- Usos: Evitar sobreajuste. Puede ajustar un modelo a muchas muestras de arranque para ver cuánto varían sus coeficientes, proporcionando una distribución en lugar de una estimación de un solo punto.
+
+```{r}
+library(tidymodels)
+set.seed(2026)
+titanic_folds <- bootstraps(data = titanic_train, times = 25)
+titanic_folds
+```
+
+- Especificaciones del modelo, usando del paquete `glm`
+
+```{r}
+titanic_glm_spec <- 
+  logistic_reg() %>%
+  set_engine('glm') %>%  
+  set_mode('classification')
+titanic_glm_spec
+```
+
+- *Feature Engineering* (Ingenieria de Variables), usando el paquete `recipe`
+
+```{r}
+titanic_recipe <- 
+  recipe(Survived ~ Pclass + Sex + Age + SibSp + Parch + Fare + Embarked, data = titanic_train) %>%
+  step_impute_median(Age,Fare) %>% 
+  step_impute_mode(Embarked) %>% 
+  step_mutate_at(Survived, Pclass, Sex, Embarked, fn = factor) %>% 
+  step_mutate(Travelers = SibSp + Parch + 1) %>% # nueva variable
+  step_rm(SibSp, Parch) %>% # eliminar variables
+  step_dummy(all_nominal_predictors()) %>% # crear indicadoras 
+  step_normalize(all_numeric_predictors()) # normalizar variables 
+```
+
+- *Workflow* (flujo de trabajo)
+
+```{r}
+doParallel::registerDoParallel() # el remuestreo es paralelizable (HPC)
+titanic_glm_wf <- 
+  workflow() %>% 
+  add_recipe(titanic_recipe) %>% 
+  add_model(titanic_glm_spec) %>% 
+  fit_resamples(titanic_folds)
+titanic_glm_wf
+```
+
+- Recopilar métricas (precisión y área bajo la curva característica de operación)
+s
+```{r}
+collect_metrics(titanic_glm_wf)
+```
+
+- Brier es análoga al error cuadrático medio en los modelos de regresión. (con 0 indicando predicciones perfectas.) [https://yardstick.tidymodels.org/reference/brier_class.html](https://yardstick.tidymodels.org/reference/brier_class.html)
+
+- Usamos como un ajuste final para todos los datos de entrenamiento.
+
+```{r}
+titanic_glm_last_wf <- workflow() %>% 
+  add_recipe(titanic_recipe) %>% 
+  add_model(titanic_glm_spec)
+final_fit <- fit(object = titanic_glm_last_wf, data = titanic_train)
+final_fit
+```
+
+- Feature Importance: En regresión logística (GLM), el FI de los predictores se determina principalmente por la magnitud de los coeficientes estandarizados, donde valores absolutos mayores indican predictores más fuertes.
+
+```{r}
+library(vip)
+final_fit %>%
+  extract_fit_parsnip() %>%
+  vip(num_features = 10)
+```
+
+
+
+### K-Means
+
+- K-means es un algoritmo de agrupamiento (*Clustering*) de aprendizaje automático no supervisado, que particiona $n$ datos en $k$ distintos grupos (*clusters*), minimizando la distancia entre los puntos y su centroide de cada cluster.
+
+![](extras/cluster.png){width=90%}
+
+- La idea principal del *clustering* es agrupar instancias (filas), variables (columnas) o ambas simultáneamente, según la separación entre ellas. Esta separación se determina mediante una medida de distancia denominada **medida de disimilitud**. Se asume que se desconocen las clases a las que pertenecen las instancias.
+
+- K-means es un método basado en `Particionamiento`: El conjunto de datos se divide en un número $K$ de *clusters* predefinidos, y luego, de forma iterativa, los puntos de datos se reasignan a un *cluster* hasta que se cumple un criterio de parada. Generalmente, esto ocurre cuando se minimiza una función, como la suma de los cuadrados dentro de cada *cluster*.
+
+- K-means (*MacQueen*, 1967): "El objetivo es minimizar la disimilitud de los datos dentro de cada *cluster* y maximizar la disimilitud de los datos que pertenecen a *clusters* distintos."
+
+- **ALGORITHM:**
+
+    - `IMPUT`: Un conjunto de datos $S$ and el número de *clusters* $K$.
+    - `OUTPUT`: Una lista $L$ de *clusters* donde cada dato de $S$ es asignado.
+    
+    1. Selecionar los centroides iniciales de los $K$ clusters: $c_1, c_2, ..., c_K$.
+    2. Asignar cada dato $x_i$ de $S$ al *cluster* $C_i$ , talque su centroide $c_i$ esta cercano a $x_i$, esto es: $$C_i= argmin_{1\leq k \leq K} || x_i-c_k||$$
+    3. Para cada *cluster*, el centroide es recalculado, basado en los datos contenidos en el *cluster* y minimizando la suma de cuadrados dentro de cada *cluster*, esto es: $$WSS=\sum_{k=1}^K \sum_{C_i=k}||x_i-c_k||^2$$.
+    4. ir al paso 2, hasta lograr la convergencia.
+
+- Paso a Paso: $K=2$
+
+![](extras/kmeans.png){width=100%}
+
+- Animado $K=3$
+
+![](extras/kmeansa.gif){width=100%}
+
+
+
+- Alternativas para escoger los $K$ centroides iniciales:
+
+    - Usar los $K$ primeras instancias (observaciones).
+    - Escoger aleatoriamente $K$ instancias.
+
+- Ventajas
+
+    - Computacionalmente rápido.
+    - Rubusto a valores perdidos.
+
+- Desventajas
+
+    - Sensible a valores extremos (*outliers*)
+    - El criterio de optimización no se logra de forma global, unicamnete de forma local.
+    
+
+### K-means diabetes
+
+- [https://www.kaggle.com/datasets/mathchi/diabetes-data-set?resource=download](https://www.kaggle.com/datasets/mathchi/diabetes-data-set?resource=download)
+
+```{r}
+diabetes <- read.csv("datasets/diabetes.csv", header = TRUE)
+glimpse(diabetes)
+```
+
+```{r}
+diabetes %>% 
+  ggplot(aes( BMI , Glucose)) +
+  geom_point()
+```
+
+```{r}
+diabetes_clust <- kmeans(select(diabetes, -Outcome), centers = 2)
+summary(diabetes_clust)
+```
+
+```{r}
+library(broom)
+tidy(diabetes_clust)
+```
+
+
+```{r}
+augment(diabetes_clust, diabetes) %>%
+  ggplot(aes(BMI,Glucose, color = .cluster)) +
+  geom_point()
+```
+
+```{r}
+kclusts <-
+  tibble(k = 1:9) %>%
+  mutate(
+    kclust = map(k, ~ kmeans(select(diabetes, -Outcome), .x)),
+    glanced = map(kclust, glance)
+  )
+
+kclusts %>%
+  unnest(cols = c(glanced)) %>%
+  ggplot(aes(k, tot.withinss)) +
+  geom_line(alpha = 0.5, size = 1.2, color = "midnightblue") +
+  geom_point(size = 2, color = "midnightblue")
+```
+
+
+```{r}
+final_clust <- kmeans(select(diabetes, -Outcome), centers = 3)
+```
+
+```{r}
+library(plotly)
+
+p <- augment(final_clust, diabetes) %>%
+  ggplot(aes(BMI, Glucose, color = .cluster, name = Outcome)) +
+  geom_point()
+
+ggplotly(p, height = 500)
+```
+
+
+
+### Palmer Penguins Original
+
+```{r}
+data("penguins", package = "modeldata")
+penguins1 <- penguins %>%
+  drop_na()
+```
+
+
+```{r}
+penguins1 %>% 
+  ggplot(aes( bill_length_mm , bill_depth_mm, color= species)) +
+  geom_point()
+```
+
+
+### K-Means Palmer Penguins
+
+- bill_length_mm y bill_depth_mm
+
+```{r}
+data("penguins", package = "modeldata")
+penguins <- penguins %>%
+  select(bill_length_mm, bill_depth_mm) %>%
+  drop_na()
+# shuffle rows
+penguins <- penguins %>%
+  sample_n(nrow(penguins))
+glimpse(penguins)
+```
+
+
+```{r}
+penguins %>% 
+  ggplot(aes( bill_length_mm , bill_depth_mm)) +
+  geom_point()
+```
+
+
+```{r}
+penguins_clust <- kmeans(penguins, centers = 3)
+summary(penguins_clust)
+```
+
+
+```{r}
+tidy(penguins_clust)
+augment(penguins_clust, penguins) %>%
+  ggplot(aes(bill_length_mm,bill_depth_mm, color = .cluster)) +
+  geom_point()
+```
+
+`COMPARACION`
+
+```{r}
+penguins1 %>% 
+  ggplot(aes( bill_length_mm , bill_depth_mm, color= species)) +
+  geom_point()
+```
+
+
+
+
+### K-Means Palmer Penguins
+
+- bill_length_mm, bill_depth_mm, flipper_length_mm, body_mass_g
+
+```{r}
+data("penguins", package = "modeldata")
+penguins <- penguins %>%
+  select(bill_length_mm, bill_depth_mm,flipper_length_mm,body_mass_g) %>%
+  drop_na()
+glimpse(penguins)
+```
+
+
+```{r}
+penguins_clust <- kmeans(penguins, centers = 3)
+summary(penguins_clust)
+```
+
+
+```{r}
+tidy(penguins_clust)
+augment(penguins_clust, penguins) %>%
+  ggplot(aes(bill_length_mm,bill_depth_mm, color = .cluster)) +
+  geom_point()
+```
+
+
+`EXPLORAR PCA PREVIAMENTE Y LUEGO K-MEANS`
 
 
 # 🇵🇪 Datos Perú
