@@ -1,0 +1,272 @@
+---
+title: "ESTADÍSTICA APLICADA"
+subtitle: "UNIDAD 4"
+author: Dr. Walter Quispe Vargas
+date:  "`r format(Sys.time(), '%d - %m - %Y')`"
+output:
+  rmdformats::readthedown:
+    highlight: kate
+    code_folding: show
+css: extras/custom.css
+--- 
+<style>
+body {
+text-align: justify}
+</style>
+  
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(cache = TRUE, echo = TRUE, warning = FALSE, message = FALSE, comment = NA)
+library(knitr)
+library(tidyverse)
+library(janitor)
+library(glue)
+library(kableExtra)
+library(skimr)
+library(descriptr)
+library(corrplot)
+library(BSDA)
+library(EnvStats)
+library(moderndive)
+library(gapminder)
+library(broom)
+library(DT)       
+library(plotly)  
+library(palmerpenguins)
+library(gt)
+library(gtsummary)
+library(ggcorrplot)
+library(tidyquant)
+library(timetk)
+library(forecast)
+library(titanic)
+```
+
+
+
+**Curso de Estadística Aplicada para la EAP de Ciencia de la Computación de la Univeridad Continental**
+
+---
+
+# 🔗 Cadenas de Markov
+
+### Proceso Estocástico
+
+- Un `PROCESO ESTOCÁSTICO` es un modelo matemático que describe la evolución de un sistema en el tiempo cuando existe incertidumbre o aleatoriedad.
+
+    - Definido formalmente como una **colección de variables aleatorias** $$\{X_t, t\in T \}$$ definidas sobre un mismo espacio de probabilidad, donde: $t$ representa el tiempo (discreto o continuo), $X_t$ es el estado del sistema en el instante $t$.
+    - Piensa en un proceso estocástico como una secuencia de valores que cambian con el tiempo de forma no determinista (**serie de tiempo**). No puedes predecir exactamente qué ocurrirá, pero sí puedes describirlo probabilísticamente.
+
+- Propiedades y conceptos claves:
+
+    - **Espacio de Estados**: valores posibles de $X_t$, discreto o continuo.
+    - **Indice Temporal** valores de $t$, discreto o continuo.
+    - **Dependencia Temporal** cómo influye el pasado en el futuro.
+
+- Ejemplos relevantes en computación:
+
+    - Cadenas de Markov: modelan navegación web (PageRank)
+    - Procesos de Poisson: llegadas de solicitudes a un servidor
+    - Series de tiempo (ARIMA): predicción de datos (ventas, tráfico)
+    - Random walks: algoritmos probabilísticos
+
+### Cadena de Markov en Tiempo Discreto
+
+- *Andréi Markov* (1906) convirtió la dependencia probabilistica en estructura matemática.
+
+- Una [CADENA DE MARKOV](https://www.youtube.com/watch?v=6pO6Mm2qJaE) en tiempo discreto (CMTD) es un proceso estocástico donde la evolución futura del sistema depende exclusivamente de su estado actual, no de su historial pasado.
+
+    - Definido formalmente como: $$\{X_n \}, n=0,1,2,...$$ $$X_0,X_1,X_2,...$$
+    - Propiedad de Markov: (memoria corta) $$Pr(X_{n+1}=j|X_n=i,X_{n-1}=i_{n-1},...,X_0=i_0)=Pr(X_{n+1}=j|X_n=i)$$ 
+
+- Componentes:
+
+    - **Estados**: Conjunto de posibles valores de $X_t$ (situaciones del sistema). Por ejemplo en el sistema climatico, hay estados  {Soleado, Luvioso, Nublado}
+    - **Matriz de Transición**: Describe las probabilidades de pasar de un estado a otro, por ejemplo para el sistema climatico. 
+$$P =
+\begin{bmatrix}
+0.6 & 0.2 & 0.2 \\
+0.3 & 0.5 & 0.2 \\
+0.4 & 0.3 & 0.3
+\end{bmatrix}
+$$
+
+    - Matrices Estocásticas (cada fila suma 1)
+
+Interpretación:
+
+    
+| Estado actual → siguiente | Soleado (S) | Lluvioso (L) | Nublado (N) |
+| ------------------------- | ----------- | ------------ | ----------- |
+| **Soleado (S)**           | 0.6         | 0.2          | 0.2         |
+| **Lluvioso (L)**          | 0.3         | 0.5          | 0.2         |
+| **Nublado (N)**           | 0.4         | 0.3          | 0.3         |
+
+
+- Si hoy está Soleado:
+
+    - 60% sigue Soleado
+    - 20% pasa a Lluvioso
+    - 20% pasa a Nublado
+
+- Si hoy está Lluvioso:
+    
+    - 50% sigue Lluvioso
+    - 30% pasa a Soleado
+    - 20% pasa a Nublado
+
+- Si hoy está Nublado:
+    
+    - 40% pasa a Soleado
+    - 30% pasa a Lluvioso
+    - 30% sigue Nublado
+
+- **Distribución de Probabilidad**: Describe cómo se reparte la probabilidad de que el sistema esté en cada estado en un instante dado.
+
+    - La distribución de probabilidad es un vector: $$\pi^{(n)}=(\pi_1^{(n)},\pi_2^{(n)},...,\pi_k^{(n)})$$
+    donde $\pi_i^{(n)}=Pr(X_n=i)$, representa la probabilidad de que el sistema esté en el estado $i$ en el tiempo $n$.
+    - La distribución de probabilidad cambia según la matriz de transición $P$: $$\pi^{(n+1)}=\pi^{(n)}P$$ Si multiplicas la distribución actual por la matriz de transición, entonces obtienes la distribución del siguiente paso.
+
+Por ejemplo, en el sistema climatico, supongamos que la distrubución inicial es: $$\pi^{(0)}=(1,0,0)$$, esta soleado, despues de un paso (una unidad de tiempo) $$\pi^{(1)}=\pi^{(0)}P$$
+
+$$\pi^{(1)}=(1,0,0)\begin{bmatrix}
+0.6 & 0.2 & 0.2 \\
+0.3 & 0.5 & 0.2 \\
+0.4 & 0.3 & 0.3
+\end{bmatrix} = (0.6,0.2,0.2)$$
+
+- Propiedades: $\sum_i \pi_i^{(n)} =1$, donde $\pi_i^{(n)}\geq 0$
+
+- **Distribución Estacionaria**: En una cadena de Markov se refiere a una situación en la que la distribución de probabilidades sobre los estados no cambia con el tiempo. 
+
+$$\pi P=\pi$$
+Las probabilidades de estar en cada estado se vuelven estables Aunque el sistema siga evolucionando, la distribución ya no cambia.
+
+Ejemplo del sistema climatico:
+
+Sea la distribución estacionaria: $$\pi = (\pi_S, \pi_L, \pi_N)$$
+Debe cumplir $$\pi P = \pi
+\quad \text{y} \quad
+\pi_S + \pi_L + \pi_N = 1$$
+Sistema de ecuaciones: (solo se necesita 2 ecuaciones + la normalización)
+
+$$\begin{cases}
+\pi_S = 0.6\pi_S + 0.3\pi_L + 0.4\pi_N \\
+\pi_L = 0.2\pi_S + 0.5\pi_L + 0.3\pi_N \\
+\pi_S + \pi_L + \pi_N = 1
+\end{cases}$$
+Reordenando:
+$$\begin{cases}
+0.4\pi_S - 0.3\pi_L - 0.4\pi_N = 0 \\
+-0.2\pi_S + 0.5\pi_L - 0.3\pi_N = 0 \\
+\pi_S + \pi_L + \pi_N = 1
+\end{cases}$$
+Solución:
+$$\pi = \left(0.4615,\; 0.3077,\; 0.2308\right)$$
+
+Interpretación:
+
+- **A largo plazo**:
+
+    - 🌞 Soleado: ~46.15%
+    - 🌧️ Lluvioso: ~30.77%
+    - ☁️ Nublado: ~23.08%
+
+
+
+```{r}
+# Estados
+states <- c("Soleado", "Lluvioso", "Nublado")
+
+# Matriz de transición
+P <- matrix(c(
+  0.6, 0.2, 0.2,
+  0.3, 0.5, 0.2,
+  0.4, 0.3, 0.3
+), nrow = 3, byrow = TRUE)
+
+colnames(P) <- states
+rownames(P) <- states
+
+print("Matriz de transición:")
+print(P)
+
+pi0 <- c(1, 0, 0)  # 100% Soleado
+
+n_steps <- 20
+distributions <- matrix(0, nrow = n_steps, ncol = 3)
+distributions[1, ] <- pi0
+
+for (t in 2:n_steps) {
+  distributions[t, ] <- distributions[t-1, ] %*% P
+}
+
+colnames(distributions) <- states
+
+matplot(distributions, type = "l", lty = 1, lwd = 2,
+        xlab = "Tiempo (días)",
+        ylab = "Probabilidad",
+        main = "Evolución de la distribución de estados")
+
+legend("right", legend = states, lty = 1, lwd = 2)
+
+
+eig <- eigen(t(P))
+stationary <- Re(eig$vectors[,1])
+stationary <- stationary / sum(stationary)
+
+print("Distribución estacionaria:")
+print(stationary)
+
+abline(h = stationary, lty = 2)
+
+
+set.seed(123)
+n_sim <- 50
+current_state <- 1
+trajectory <- numeric(n_sim)
+trajectory[1] <- current_state
+
+for (t in 2:n_sim) {
+  current_state <- sample(1:3, size = 1, prob = P[current_state, ])
+  trajectory[t] <- current_state
+}
+
+# Convertir a nombres
+trajectory_states <- states[trajectory]
+
+# Gráfico de trayectoria
+plot(trajectory, type = "s", yaxt = "n",
+     xlab = "Tiempo",
+     ylab = "Estado",
+     main = "Simulación de trayectoria climática")
+
+axis(2, at = 1:3, labels = states)
+
+
+if (!require(igraph)) install.packages("igraph")
+library(igraph)
+
+g <- graph_from_adjacency_matrix(P, mode = "directed", weighted = TRUE)
+
+plot(g,
+     edge.label = round(E(g)$weight, 2),
+     vertex.label = states,
+     main = "Grafo de transición de estados")
+```
+
+
+
+
+
+# 𓄧 Procesos de Poisson
+
+-
+
+# 🇵🇪 Datos Perú
+
+- [https://estadisticas.bcrp.gob.pe/estadisticas/series/](https://estadisticas.bcrp.gob.pe/estadisticas/series/)
+
+- [https://www.inei.gob.pe/estadisticas-indice-tematico/](https://www.inei.gob.pe/estadisticas-indice-tematico/)
+
+- [https://systems.inei.gob.pe/SIRTOD/](https://systems.inei.gob.pe/SIRTOD/)
+
