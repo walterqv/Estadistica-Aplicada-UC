@@ -260,7 +260,541 @@ plot(g,
 
 # 𓄧 Procesos de Poisson
 
--
+### Propósito
+
+- Definir un proceso de Poisson de tiempo continuo.
+- Comprender las propiedades fundamentales del proceso.
+- Relacionar el proceso de Poisson con la distribución exponencial.
+- Modelar tiempos de espera en sistemas de colas.
+- Implementar simulaciones y visualizaciones en R.
+
+### Motivación
+
+Muchos casos reales ocurren de manera aleatoria en el tiempo:
+
+- Llegadas de clientes a un banco.
+- Solicitudes a un servidor web.
+- Llamadas telefónicas.
+- Paquetes en una red.
+- Vehículos llegando a un peaje.
+
+El Proceso de Poisson es uno de los modelos más importantes para representar estos eventos aleatorios.
+
+### Historia
+
+- *Siméon Poisson* (1837) *Recherches sur la probabilité des jugements en matière criminelle et en matière civile*. En este trabajo estudió eventos raros (poco frecuentes), errores judiciales. 
+
+- Descubrió que cuando el número de ensayos es muy grande, la probabilidad de éxito es muy pequeña, asi planteó una nueva distribución de probabilidad (mediante convergencia de la binomial): $$Pr(X=k)=\frac{\lambda^k e^{-\lambda}}{k!}$$
+
+
+```{r}
+library(latex2exp)
+# Parámetros
+lambda_val <- 3
+x_vals <- 0:15
+
+# Crear data frame
+data <- data.frame(k = x_vals, prob = dpois(x_vals, lambda = lambda_val))
+
+# Graficar
+ggplot(data, aes(x = k, y = prob)) +
+  geom_col(fill = "cyan", color = "black", alpha = 0.5) +
+  geom_point(color = "red") +
+  labs(title = TeX(paste0("Distribución de Poisson: $\\lambda$ = ", lambda_val, "$")),
+       x = "Número de eventos (k)",
+       y = "Probabilidad Pr(X=k)") +
+  theme_minimal()
+
+```
+
+
+- Posteriormente extendieron la idea hacia los procesos estocásticos en tiempo continuo, dando origen a los procesos de Poisson.
+
+- *Anger Erlang* (1909) `Teoría de Colas` Desarrollo modelos para calcular congestión de llamadas, tiempos de espera, para modelar llegadas de llamdas telefónicas. 
+
+### Definición del Proceso de Poisson
+
+- Un proceso estocástico $\{N(t),t\geq0\}$ es un **Proceso de Poisson** con tasa $\lambda >0$, si: 
+
+    - $N(0)=0$: El proceso comienza sin eventos
+    - Incrementos Independeintes: El número de eventos que ocurren en intervalos de tiempo disjuntos es independiente entre sí (e.g. el número de eventos entre $[t_1, t_2]$ no afecta a $[t_3, t_4]$).
+    - Incrementos Estacionarios: La distribución del número de eventos en cualquier intervalo depende solo de la longitud del intervalo $[t-s]$, no de su ubicación en el tiempo.
+    - Distribución de Poisson: Para cualquier intervalo de longitud $t$, el número de eventos $N(t)$ sigue una distribución de Poisson con media $\lambda t$: $$Pr(N(t)=k)=\frac{(\lambda t)^k e^{-\lambda t}}{k!}, \ \ \ k=0,1,2,\dots $$
+    - Donde:
+    
+        - $\lambda$: tasa promedio de llegadas por unidad de tiempo.
+        - $t$: longitud del intervalo temporal.
+        - $k$: número de eventos.
+
+### Relación con la Distribución Exponencial ❤️
+
+- Uno de los resultados más importantes fue demostrar que:
+
+    - Si los eventos siguen un Proceso de Poisson, los tiempos entre llegadas siguen una distribución exponencial.
+    - **Distribución Exponencial** $$f(t)=\lambda e^{-\lambda t}, \ \ t\geq 0$$
+
+```{r}
+
+set.seed(123) # Para reproducibilidad
+n <- 1000
+rate <- 2 # Parámetro de tasa (lambda)
+data <- data.frame(value = rexp(n, rate = rate))
+
+# Crear el gráfico con ggplot2
+ggplot(data, aes(x = value)) +
+  # Histograma
+  geom_histogram(aes(y = ..density..), bins = 30, fill = "forestgreen", color = "black", alpha = 0.5) +
+  # Curva de densidad teórica
+  stat_function(fun = dexp, args = list(rate = rate), color = "magenta", size = 1) +
+  # Etiquetas y títulos
+  labs(title = "Distribución Exponencial",
+       subtitle = TeX(paste0("Tasa: $\\lambda$ = ", rate, "$")),
+       x = "Valor",
+       y = "Densidad") +
+  theme_minimal()
+
+```
+
+
+- Distribución Acumulada: $Pr(T\leq t)=1-e^{-\lambda t}$
+
+
+- **En general**: Los tiempos que transcurren entre dos eventos consecutivos $T_{n}$ son variables aleatorias independientes e idénticamente distribuidas (i.i.d.) con una distribución exponencial de parámetro $\lambda$, e.i. $T_n \sim \text{Exp}(\lambda)$
+
+- **Propiedad de Falta de Memoria** (El sistema “olvida” cuánto tiempo ya esperó.): La distribución exponencial posee la propiedad: $Pr(T>s+t|T>s)=Pr(T>t)$
+
+
+### Aplicación: Sistema de Colas
+
+Supongamos:
+
+- Los clientes llegan al banco aleatoriamente.
+- En promedio llegan 6 clientes por hora.
+- Entonces: la tasa de llegadas $\lambda=6$
+
+**Este ejemplo simula**:
+
+- Llegadas de clientes.
+- Tiempos entre llegadas.
+- Tiempo de espera en cola.
+- Atención por un solo cajero.
+
+```{r}
+
+set.seed(123)
+
+# Parámetros
+lambda <- 6        # llegadas por hora
+mu <- 8            # clientes atendidos por hora
+n <- 100           # número de clientes
+
+# -----------------------------
+# TIEMPOS ENTRE LLEGADAS
+# -----------------------------
+inter_arrivals <- rexp(n, rate = lambda)
+
+# Tiempo acumulado de llegada
+arrival_times <- cumsum(inter_arrivals)
+
+# -----------------------------
+# TIEMPOS DE SERVICIO
+# -----------------------------
+service_times <- rexp(n, rate = mu)
+
+# -----------------------------
+# SIMULACIÓN DE COLA
+# -----------------------------
+start_service <- numeric(n)
+departure_times <- numeric(n)
+waiting_times <- numeric(n)
+
+# Primer cliente
+start_service[1] <- arrival_times[1]
+departure_times[1] <- start_service[1] + service_times[1]
+waiting_times[1] <- 0
+
+# Resto de clientes
+for(i in 2:n){
+
+  start_service[i] <- max(arrival_times[i],
+                          departure_times[i-1])
+
+  waiting_times[i] <- start_service[i] -
+                      arrival_times[i]
+
+  departure_times[i] <- start_service[i] +
+                        service_times[i]
+}
+
+# -----------------------------
+# DATA FRAME
+# -----------------------------
+bank_queue <- data.frame(
+  Cliente = 1:n,
+  Llegada = arrival_times,
+  Servicio = service_times,
+  Espera = waiting_times,
+  Salida = departure_times
+)
+
+head(bank_queue)
+```
+
+- **Visualización de llegadas** (Proceso de Poisson)
+
+```{r}
+ggplot(bank_queue,
+       aes(x = Llegada,
+           y = Cliente)) +
+  geom_step(color = "blue") +
+  labs(
+    title = "Proceso de Poisson: Llegadas al Banco",
+    x = "Tiempo (horas)",
+    y = "Número acumulado de clientes"
+  ) +
+  theme_minimal()
+```
+
+
+Interpretación:
+
+- Cada salto representa una llegada.
+- Las llegadas ocurren aleatoriamente.
+- El patrón escalonado es típico de un proceso de Poisson.
+
+
+- **Distribución de tiempos entre llegadas**
+
+```{r}
+ggplot(bank_queue,
+       aes(x = diff(c(0, Llegada)))) +
+  geom_histogram(
+    bins = 20,
+    fill = "skyblue",
+    color = "black"
+  ) +
+  labs(
+    title = "Distribución Exponencial de Tiempos Entre Llegadas",
+    x = "Tiempo entre llegadas",
+    y = "Frecuencia"
+  ) +
+  theme_minimal()
+```
+
+Interpretación:
+- Muchos clientes llegan rápidamente.
+- Algunos tardan más.
+- La distribución es asimétrica hacia la derecha.
+
+
+- **Tiempo de espera en cola**
+
+```{r}
+ggplot(bank_queue,
+       aes(x = Cliente,
+           y = Espera)) +
+  geom_line(color = "red") +
+  labs(
+    title = "Tiempo de Espera de los Clientes",
+    x = "Cliente",
+    y = "Tiempo de espera"
+  ) +
+  theme_minimal()
+```
+
+Interpretación:
+- Cuando llegan muchos clientes juntos, la cola crece.
+- Si el cajero atiende rápido, la espera disminuye.
+
+- **Métricas importantes**
+
+```{r}
+cat("Tiempo promedio de espera:",
+    mean(waiting_times), "\n")
+
+cat("Máximo tiempo de espera:",
+    max(waiting_times), "\n")
+
+cat("Clientes que esperaron:",
+    sum(waiting_times > 0), "\n")
+```
+
+- **Interpretación Teórica**
+
+En teoría de colas, este modelo corresponde a: $M/M/1$, donde:
+
+- Primer $M$: llegadas Poisson.
+- Segundo $M$: tiempo de servicios exponenciales.
+- $1$: un servidor (cajero).
+
+Condición de estabilidad: El sistema funciona bien si:
+
+$\rho=\frac{\lambda}{\mu}<1$
+
+Donde: 
+
+- $\lambda$: tasa de llegada.
+- $\mu$: tasa de servicio.
+- $\rho$: utilización del sistema.
+
+$\rho=\frac{6}{8}=0.75$ (El cajero está ocupado el 75% del tiempo.)
+
+
+
+### Otros Ejemplos
+
+- `Escenario`
+- Un cajero automático recibe clientes a razón de: $\lambda=5$ clientes por minuto.
+
+- Preguntas:
+    
+    - ¿Cuántos clientes llegan en 2 minutos?
+    - ¿Cuánto tiempo tarda en llegar el siguiente cliente?
+    - ¿Cómo simular el sistema?
+
+- Simulación de número de llegadas
+
+```{r}
+# Parámetros
+lambda <- 5
+t <- 2
+
+# Simulación de llegadas
+set.seed(123)
+
+clientes <- rpois(1000, lambda * t)
+
+# Resumen
+summary(clientes)
+
+# Histograma
+hist(clientes,
+     main="Número de clientes en 2 minutos",
+     xlab="Clientes",
+     col="skyblue")
+```
+
+- Simulación de Tiempos Entre Llegadas
+
+```{r}
+# Tiempos entre llegadas
+tiempos <- rexp(1000, rate=lambda)
+
+# Resumen
+summary(tiempos)
+
+# Histograma
+hist(tiempos,
+     probability=TRUE,
+     main="Tiempos entre llegadas",
+     xlab="Tiempo",
+     col="lightgreen")
+
+# Curva teórica
+curve(dexp(x, rate=lambda),
+      add=TRUE,
+      lwd=2,
+      col="red")
+```
+
+
+```{r}
+set.seed(123)
+
+# Parámetros
+lambda <- 3
+n <- 100
+
+# Tiempos entre llegadas
+interarrivals <- rexp(n, rate=lambda)
+
+# Tiempos de llegada acumulados
+arrival_times <- cumsum(interarrivals)
+
+# Visualización
+plot(arrival_times,
+     1:n,
+     type="s",
+     main="Proceso de Poisson",
+     xlab="Tiempo",
+     ylab="Número acumulado de clientes",
+     col="blue",
+     lwd=2)
+```
+
+- EJEMPLO 2
+
+```{r}
+set.seed(123)
+
+lambda <- 5
+tiempo <- 20
+
+eventos <- rpois(tiempo, lambda)
+
+datos <- data.frame(
+  minuto = 1:tiempo,
+  llegadas = eventos
+)
+
+head(datos)
+```
+
+```{r}
+ggplot(datos, aes(x = minuto, y = llegadas)) +
+  geom_line(color = "blue", linewidth = 1) +
+  geom_point(size = 3, color = "red") +
+  labs(
+    title = "Proceso de Poisson: Llegadas por minuto",
+    x = "Tiempo (minutos)",
+    y = "Número de llegadas"
+  ) +
+  theme_minimal()
+```
+Interpretación
+
+- Cada punto representa clientes por minuto.
+- La variabilidad es aleatoria.
+- El promedio tiende a acercarse a $\lambda$
+
+- Simulación de Tiempos Entre Llegadas
+
+```{r}
+set.seed(123)
+
+lambda <- 5
+
+tiempos_espera <- rexp(1000, rate = lambda)
+
+datos_exp <- data.frame(
+  espera = tiempos_espera
+)
+```
+
+```{r}
+ggplot(datos_exp, aes(x = espera)) +
+  geom_histogram(
+    bins = 40,
+    fill = "skyblue",
+    color = "black"
+  ) +
+  labs(
+    title = "Distribución Exponencial de Tiempos Entre Llegadas",
+    x = "Tiempo de espera",
+    y = "Frecuencia"
+  ) +
+  theme_minimal()
+```
+
+
+- Simulación de una Cola Simple
+
+- Escenario: Una ventanilla de atención:
+  
+    - Llegadas Poisson.
+    - Tiempo de servicio constante.
+
+```{r}
+
+set.seed(123)
+
+# Parámetros
+lambda <- 4
+n_clientes <- 100
+
+# Tiempos entre llegadas
+interarrivals <- rexp(n_clientes, rate = lambda)
+
+# Tiempos de llegada acumulados
+arrival_times <- cumsum(interarrivals)
+
+# Tiempo de servicio
+service_time <- 0.15
+
+# Inicialización
+start_service <- numeric(n_clientes)
+end_service <- numeric(n_clientes)
+waiting_time <- numeric(n_clientes)
+
+# Primer cliente
+start_service[1] <- arrival_times[1]
+end_service[1] <- start_service[1] + service_time
+
+# Simulación de la cola
+for(i in 2:n_clientes){
+
+  start_service[i] <- max(
+    arrival_times[i],
+    end_service[i-1]
+  )
+
+  end_service[i] <- start_service[i] + service_time
+
+  waiting_time[i] <- start_service[i] - arrival_times[i]
+}
+
+# DataFrame
+cola <- data.frame(
+  cliente = 1:n_clientes,
+  llegada = arrival_times,
+  espera = waiting_time
+)
+
+head(cola)
+```
+
+
+```{r}
+ggplot(cola, aes(x = cliente, y = espera)) +
+  geom_line(color = "darkgreen", linewidth = 1) +
+  labs(
+    title = "Tiempo de Espera en la Cola",
+    x = "Cliente",
+    y = "Tiempo de espera"
+  ) +
+  theme_minimal()
+```
+
+
+
+EN GENERAL
+
+
+```{r}
+set.seed(123)
+# 2. Parámetros de la simulación
+lambda <- 5       # Tasa promedio de eventos por unidad de tiempo
+t_max <- 10       # Tiempo total de observación
+
+# 3. Simular el Proceso de Poisson
+# Tiempos entre eventos (exponenciales)
+tiempos_entre <- rexp(n = t_max * lambda * 2, rate = lambda) 
+tiempos_llegada <- cumsum(tiempos_entre)
+# Filtrar para no superar t_max
+tiempos_llegada <- tiempos_llegada[tiempos_llegada <= t_max]
+
+# Crear el número de eventos en cada tiempo
+n_eventos <- 1:length(tiempos_llegada)
+
+# Crear data frame para ggplot
+df <- data.frame(
+  tiempo = c(0, tiempos_llegada),
+  conteo = c(0, n_eventos)
+)
+
+# 4. Graficar con ggplot2
+ggplot(df, aes(x = tiempo, y = conteo)) +
+  geom_step(color = "blue", size = 1) + # geom_step es clave para procesos de conteo
+  geom_point(color = "red") +           # Puntos en cada evento
+  labs(title = "Simulación de un Proceso de Poisson",
+       subtitle = TeX(paste0("Tasa: $\\lambda$ = ", lambda, "$")),
+       x = "Tiempo (t)",
+       y = "Número de eventos N(t)") +
+  theme_minimal()
+
+```
+
+
 
 # 🇵🇪 Datos Perú
 
